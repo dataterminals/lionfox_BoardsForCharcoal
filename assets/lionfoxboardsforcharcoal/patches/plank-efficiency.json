@@ -1,0 +1,14 @@
+[
+	{
+		// Charcoal yield per block is stackSize/4 * efficiency. Firewood ships with no
+		// "efficiency" attribute, so BlockCharcoalPit.GetFirewoodQuantity falls back to a
+		// uniform 0.75 +/- 0.25. Setting the same value on planks makes one plank yield the
+		// same charcoal as one piece of firewood. This is the single balance knob - raise
+		// "avg" for more charcoal per plank, lower it for less.
+		"op": "addmerge",
+		"path": "/attributes/efficiency",
+		"value": { "dist": "uniform", "avg": 0.75, "var": 0.25 },
+		"file": "game:itemtypes/resource/plank",
+		"side": "Server"
+	}
+]

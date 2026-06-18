@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "lionfox_BoardsForCharcoal/1.0.0": {
+        "runtime": {
+          "lionfox_BoardsForCharcoal.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "lionfox_BoardsForCharcoal/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

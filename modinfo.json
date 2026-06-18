@@ -1,0 +1,14 @@
+{
+    "type": "code",
+    "modid": "lionfoxboardsforcharcoal",
+    "name": "BoardsForCharcoal",
+    "description": "Lets you build charcoal pits out of stacked planks (boards) instead of firewood. Stack planks on the ground exactly like firewood, build a small firewood kindling firepit on top, enclose it and light it - the plank stacks burn down into charcoal just like firewood. Planks of any wood work, and a single pit can mix wood types across blocks. Per-plank charcoal yield matches firewood.",
+    "authors": [ "lionfox" ],
+    "version": "1.0.0",
+    "side": "Universal",
+    "requiredOnClient": true,
+    "requiredOnServer": true,
+    "dependencies": {
+        "game": "1.21.6"
+    }
+}
