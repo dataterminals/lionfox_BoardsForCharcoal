@@ -9,11 +9,19 @@ namespace lionfox_BoardsForCharcoal
     // The vanilla charcoal-pit pipeline (flood-fill, hole/seal detection, smoke, yield calc and
     // conversion to charcoalpile) reads ground storage generically. Only two spots reject
     // non-firewood with a hard `is ItemFirewood` type check, and both must be opened for planks:
-    //   1. BlockFirepit.IsFirewoodPile - decides which stacks are part of the pit (seeding,
-    //      flood-fill, hole detection). Postfixed below.
+    //   1. BlockFirepit.IsFirewoodPile - decides which stacks are part of the pit. Postfixed below.
+    //      BlockEntityCharcoalPit routes ALL of its firewood tests through this one static method
+    //      (defaultCheckAction, FindHolesInPit, ConvertPit, UpdateSmokeLocations), so a single
+    //      postfix opens the whole pit pipeline. Re-verified against 1.22.6 VSSurvivalMod.
     //   2. ItemDryGrass.OnHeldInteractStart - lets you start the firepit-construct on top of a
     //      full ground-storage stack. Without this you can never build the firepit that becomes
     //      the charcoal pit, so the stack is left as a plain (non-ignitable) pile. Prefixed below.
+    //
+    // Note what is deliberately NOT patched: the `firepitConstructable` item attribute. In 1.22.6
+    // that attribute is read in exactly one place - BlockFirepit.TryConstruct - and it gates the
+    // item you HOLD to raise the firepit through construct1..4, not the pile you build on. Granting
+    // it to planks would let you build firepits out of planks; it would NOT make a plank pile count
+    // as firewood. The firepit kindling stays firewood, as the mod description says.
     //
     // Universal: the conversion runs server-side, but the client also calls IsFirewoodPile when
     // positioning the pit's smoke particles and runs dry-grass placement client-side, so the
@@ -72,27 +80,35 @@ namespace lionfox_BoardsForCharcoal
         // full plank stack - by placing the same firepit-construct1 block vanilla would, then
         // skipping the original. Every other case (firewood, pit kilns, non-ground-storage
         // surfaces, partial stacks) returns true and falls through to vanilla untouched.
+        //
+        // Harmony binds prefix parameters by NAME, and the base CollectibleObject declaration uses
+        // `slot`/`handling` where this override uses `itemslot`/`handHandling`. The names below
+        // match ItemDryGrass's own override as it exists in 1.22.6 - confirmed by reflecting on the
+        // shipped VSSurvivalMod.dll, not by reading source. A prefix may declare a subset of the
+        // original's parameters, which is why `entitySel` and `firstEvent` are absent. If a future
+        // version renames them, Harmony throws at patch time rather than failing silently.
         static bool Prefix(ItemSlot itemslot, EntityAgent byEntity, BlockSelection blockSel, ref EnumHandHandling handHandling)
         {
             if (blockSel == null || byEntity?.World == null || !byEntity.Controls.ShiftKey) return true;
 
             IWorldAccessor world = byEntity.World;
-            Block construct = world.GetBlock(new AssetLocation("firepit-construct1"));
+            Block? construct = world.GetBlock(new AssetLocation("firepit-construct1"));
             if (construct == null) return true;
 
             if (world.BlockAccessor.GetBlock(blockSel.Position) is not BlockGroundStorage) return true;
             var be = world.BlockAccessor.GetBlockEntity<BlockEntityGroundStorage>(blockSel.Position);
 
             // Require a single, full plank stack (slots 1-3 empty), mirroring vanilla's firewood rule
-            // that the stack be complete so the firepit sits on a full block face.
-            if (!Boards.IsPlankStack(be) || be.Inventory[1].Empty == false || be.Inventory[2].Empty == false
-                || be.Inventory[3].Empty == false || be.Inventory[0].StackSize != be.Capacity)
+            // that the stack be complete so the firepit sits on a full block face. IsPlankStack is
+            // null-safe and short-circuits the rest of the chain, so `be` is non-null past this.
+            if (!Boards.IsPlankStack(be) || !be.Inventory[1].Empty || !be.Inventory[2].Empty
+                || !be.Inventory[3].Empty || be.Inventory[0].StackSize != be.Capacity)
             {
                 return true;
             }
 
             BlockPos placePos = blockSel.DidOffset ? blockSel.Position : blockSel.Position.AddCopy(blockSel.Face);
-            IPlayer player = world.PlayerByUid((byEntity as EntityPlayer)?.PlayerUID);
+            IPlayer? player = world.PlayerByUid((byEntity as EntityPlayer)?.PlayerUID);
             if (!world.Claims.TryAccess(player, placePos, EnumBlockAccessFlags.BuildOrBreak)) return false;
 
             string failureCode = "";
@@ -102,15 +118,20 @@ namespace lionfox_BoardsForCharcoal
             }
 
             world.BlockAccessor.SetBlock(construct.BlockId, placePos);
-            if (construct.Sounds != null)
+            // 1.22 changed BlockSounds.Place from AssetLocation to the SoundAttributes struct, so
+            // the old AssetLocation overload of PlaySoundAt no longer binds and a null test on
+            // Place itself is meaningless. Mirror vanilla's own call instead.
+            if (construct.Sounds?.Place.Location != null)
             {
-                world.PlaySoundAt(construct.Sounds.Place, (double)blockSel.Position.X, (double)blockSel.Position.InternalY,
-                    (double)blockSel.Position.Z, player, true, 32f, 1f);
+                world.PlaySoundAt(construct.Sounds.Place, blockSel.Position, -0.5, player);
             }
 
-            itemslot.Itemstack.StackSize--;
-            if (itemslot.Itemstack.StackSize <= 0) itemslot.Itemstack = null;
-            itemslot.MarkDirty();
+            if (itemslot.Itemstack != null)
+            {
+                itemslot.Itemstack.StackSize--;
+                if (itemslot.Itemstack.StackSize <= 0) itemslot.Itemstack = null;
+                itemslot.MarkDirty();
+            }
 
             handHandling = EnumHandHandling.PreventDefault;
             return false;
@@ -119,11 +140,12 @@ namespace lionfox_BoardsForCharcoal
 
     internal static class Boards
     {
-        // Single source of truth for "what counts as a board". Vanilla's ItemPlank class is
-        // internal, so we match on the item code: plank codes are "plank-<wood>" (e.g. plank-oak,
+        // Single source of truth for "what counts as a board". Vanilla's ItemPlank class is internal
+        // (and in 1.22.6 is literally an empty `class ItemPlank : Item {}` - it adds nothing over a
+        // plain Item), so we match on the item code: plank codes are "plank-<wood>" (e.g. plank-oak,
         // plank-aged), so the first code part is always "plank". Matching the code rather than the
         // class also lets planks from other mods' woods qualify ("boards of any wood").
-        internal static bool IsPlankStack(BlockEntityGroundStorage be)
+        internal static bool IsPlankStack(BlockEntityGroundStorage? be)
         {
             var collectible = be?.Inventory?[0]?.Itemstack?.Collectible;
             return collectible?.ItemClass == EnumItemClass.Item && collectible.FirstCodePart() == "plank";
