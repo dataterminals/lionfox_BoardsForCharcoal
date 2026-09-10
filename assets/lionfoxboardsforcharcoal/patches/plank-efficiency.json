@@ -1,10 +1,24 @@
 [
 	{
-		// Charcoal yield per block is stackSize/4 * efficiency. Firewood ships with no
-		// "efficiency" attribute, so BlockCharcoalPit.GetFirewoodQuantity falls back to a
-		// uniform 0.75 +/- 0.25. Setting the same value on planks makes one plank yield the
-		// same charcoal as one piece of firewood. This is the single balance knob - raise
-		// "avg" for more charcoal per plank, lower it for less.
+		// The single balance knob. Charcoal per ground-storage block is
+		//     clamp(roundRandom(stackSize / 4 * efficiency.nextFloat()), 0, 8)
+		// in BlockEntityCharcoalPit.ConvertPit, reading this attribute via
+		// BlockCharcoalPit.GetFirewoodQuantity. Raise "avg" for more charcoal per
+		// plank, lower it for less.
+		//
+		// NOTE: this value is deliberately identical to the fallback vanilla uses when
+		// the attribute is absent (NatFloat.createUniform(0.75f, 0.25f)), so as written
+		// the patch changes nothing - it exists to make the knob explicit and findable.
+		// Verified in-engine on 1.22.6: plank-oak carries efficiency UNIFORM 0.75 +/- 0.25.
+		//
+		// Measured over 12 sealed pits per material on 1.22.6 (charcoal per FULL block):
+		//     plank    cap 48 -> mean 7.58  (6 x1, 7 x3, 8 x8)
+		//     firewood cap 32 -> mean 5.75  (4 x1, 5 x5, 6 x3, 7 x2, 8 x1)
+		// So a full plank block yields ~32% MORE charcoal than a full firewood block,
+		// because planks stack 48 to firewood's 32. Per item planks are ~12% worse
+		// (0.158 vs 0.180 charcoal each) - the clamp at 8 shaves the top off, since
+		// 48/4 = 12 before efficiency. Setting "avg" to 0.5 would bring a full plank
+		// block down to roughly firewood parity, at the cost of per-plank yield.
 		"op": "addmerge",
 		"path": "/attributes/efficiency",
 		"value": { "dist": "uniform", "avg": 0.75, "var": 0.25 },
